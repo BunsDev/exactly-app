@@ -36,6 +36,7 @@ import { WEI_PER_ETHER } from 'utils/const';
 import { LoadingButton } from '@mui/lab';
 import { useWeb3 } from 'hooks/useWeb3';
 import { useNetwork, useSwitchNetwork } from 'wagmi';
+import ButtonsChart from 'components/charts/ButtonsChart';
 
 function PaperComponent(props: PaperProps | undefined) {
   const ref = useRef<HTMLDivElement>(null);
@@ -75,8 +76,9 @@ const RewardsModal: FC<RewardsModalProps> = ({ isOpen, open, close }) => {
   const [tx, setTx] = useState<Transaction | undefined>(undefined);
   const [input, setInput] = useState<string>('');
   const [showInput, setShowInput] = useState<boolean>(false);
+  const [rewardsOperation, setRewardsOperations] = useState<'supply' | 'claim'>('supply');
   const [selected, setSelected] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(Object.keys(rs).map((k) => [k, true])),
+    Object.fromEntries(Object.keys(rs).map((k) => [k, rewardsOperation === 'claim' ? true : k === 'EXA'])),
   );
   const [loading, setLoading] = useState<boolean>(false);
 
@@ -87,6 +89,28 @@ const RewardsModal: FC<RewardsModalProps> = ({ isOpen, open, close }) => {
     [differentAddress, selected, showInput],
   );
 
+  const switchOperation = useCallback(
+    (newOperation: 'supply' | 'claim') => {
+      setRewardsOperations(newOperation);
+      setSelected(Object.fromEntries(Object.keys(rs).map((k) => [k, newOperation === 'claim' ? true : k === 'EXA'])));
+    },
+    [rs],
+  );
+
+  const buttons = useMemo(
+    () => [
+      {
+        label: t('Supply'),
+        onClick: () => switchOperation('supply'),
+      },
+      {
+        label: t('Claim'),
+        onClick: () => switchOperation('claim'),
+      },
+    ],
+    [switchOperation, t],
+  );
+
   const submit = useCallback(async () => {
     const assets = Object.entries(selected)
       .filter(([, v]) => v)
@@ -94,6 +118,10 @@ const RewardsModal: FC<RewardsModalProps> = ({ isOpen, open, close }) => {
     setLoading(true);
     claim({ assets, to: showInput && isAddress(input) ? input : undefined, setTx }).finally(() => setLoading(false));
   }, [claim, input, selected, showInput]);
+
+  const supply = useCallback(async () => {
+    // aca le pegamos al contrato de supply
+  }, []);
 
   const rewards = useMemo(
     () =>
@@ -113,10 +141,10 @@ const RewardsModal: FC<RewardsModalProps> = ({ isOpen, open, close }) => {
   const closeAndReset = useCallback(() => {
     close();
     setShowInput(false);
-    setSelected(Object.fromEntries(Object.keys(rs).map((k) => [k, true])));
+    switchOperation('supply');
     setInput('');
     setTx(undefined);
-  }, [close, rs]);
+  }, [close, switchOperation]);
 
   if (!walletAddress) {
     return null;
@@ -161,10 +189,11 @@ const RewardsModal: FC<RewardsModalProps> = ({ isOpen, open, close }) => {
           <IconButton
             aria-label="close"
             onClick={closeAndReset}
+            size="small"
             sx={{
               position: 'absolute',
-              right: 16,
-              top: 16,
+              right: 4,
+              top: 4,
               color: 'grey.400',
             }}
           >
@@ -173,17 +202,19 @@ const RewardsModal: FC<RewardsModalProps> = ({ isOpen, open, close }) => {
         )}
         <Box p={4}>
           {!tx && (
-            <DialogTitle
-              sx={{
-                p: 0,
-                mb: 3,
-                cursor: { xs: '', sm: 'move' },
-                fontSize: 19,
-                fontWeight: 700,
-              }}
-            >
-              {t('Claim Your Rewards')}
-            </DialogTitle>
+            <Box display="flex" alignItems="center" justifyContent="space-between" mb={3}>
+              <DialogTitle
+                sx={{
+                  p: 0,
+                  cursor: { xs: '', sm: 'move' },
+                  fontSize: 19,
+                  fontWeight: 700,
+                }}
+              >
+                {t('Rewards')}
+              </DialogTitle>
+              <ButtonsChart buttons={buttons} />
+            </Box>
           )}
           {tx ? (
             <DialogContent>
@@ -200,9 +231,11 @@ const RewardsModal: FC<RewardsModalProps> = ({ isOpen, open, close }) => {
             <DialogContent sx={{ p: 0, overflow: 'hidden' }}>
               <Box display="flex" flexDirection="column" gap={4}>
                 <Typography fontSize={14}>
-                  {t(
-                    'Access your rewards that are ready for claiming. You can claim them directly to your connected wallet or to a different wallet address of your choice.',
-                  )}
+                  {rewardsOperation === 'claim'
+                    ? t(
+                        'Access your rewards that are ready for claiming. You can claim them directly to your connected wallet or to a different wallet address of your choice.',
+                      )
+                    : t('supply')}
                 </Typography>
                 <Box display="flex" flexDirection="column" gap={0.5}>
                   {rewards.map(({ symbol, amount, valueUSD }) => (
@@ -222,7 +255,7 @@ const RewardsModal: FC<RewardsModalProps> = ({ isOpen, open, close }) => {
                             selected[symbol] ? (palette.mode === 'dark' ? 'white' : 'black') : 'transparent'
                           }`,
                         '&:hover': {
-                          bgcolor: 'figma.grey.50',
+                          bgcolor: rewardsOperation === 'supply' && symbol !== 'EXA' ? 'transparent' : 'figma.grey.50',
                         },
                       }}
                       labelPlacement="start"
@@ -245,9 +278,12 @@ const RewardsModal: FC<RewardsModalProps> = ({ isOpen, open, close }) => {
                       control={
                         <Checkbox
                           checked={selected[symbol]}
+                          disabled={rewardsOperation === 'supply' && symbol !== 'EXA'}
                           icon={<CheckboxIcon sx={{ fontSize: 18 }} />}
                           checkedIcon={<CheckboxCheckedIcon sx={{ fontSize: 18 }} />}
-                          onChange={(_, checked) => setSelected((prev) => ({ ...prev, [symbol]: checked }))}
+                          onChange={(_, checked) =>
+                            rewardsOperation === 'claim' && setSelected((prev) => ({ ...prev, [symbol]: checked }))
+                          }
                         />
                       }
                     />
@@ -273,40 +309,47 @@ const RewardsModal: FC<RewardsModalProps> = ({ isOpen, open, close }) => {
                     </Box>
                   </Collapse>
                 </Box>
-                <Box display="flex" flexDirection="column" gap={2} alignItems="center">
-                  {chain && chain.id !== displayNetwork.id ? (
-                    <LoadingButton
-                      fullWidth
-                      onClick={() => switchNetwork?.(displayNetwork.id)}
-                      variant="contained"
-                      loading={switchIsLoading}
-                    >
-                      {t('Please switch to {{network}} network', { network: displayNetwork.name })}
-                    </LoadingButton>
-                  ) : (
-                    <>
+
+                {rewardsOperation === 'claim' ? (
+                  <Box display="flex" flexDirection="column" gap={2} alignItems="center">
+                    {chain && chain.id !== displayNetwork.id ? (
                       <LoadingButton
                         fullWidth
+                        onClick={() => switchNetwork?.(displayNetwork.id)}
                         variant="contained"
-                        disabled={disableSubmit}
-                        onClick={submit}
-                        loading={loading}
+                        loading={switchIsLoading}
                       >
-                        {showInput ? `${t('Claim to')} ${differentAddress}` : t('Claim to connected wallet')}
+                        {t('Please switch to {{network}} network', { network: displayNetwork.name })}
                       </LoadingButton>
-                      <ButtonBase onClick={() => setShowInput(!showInput)} disableRipple>
-                        <Typography fontSize={12} color="grey.500" sx={{ cursor: 'pointer' }}>
-                          {t('or')}{' '}
-                          <span style={{ textDecoration: 'underline' }}>
-                            {showInput
-                              ? t('Claim to connected wallet').toLowerCase()
-                              : t('claim to a different address')}
-                          </span>
-                        </Typography>
-                      </ButtonBase>
-                    </>
-                  )}
-                </Box>
+                    ) : (
+                      <>
+                        <LoadingButton
+                          fullWidth
+                          variant="contained"
+                          disabled={disableSubmit}
+                          onClick={submit}
+                          loading={loading}
+                        >
+                          {showInput ? `${t('Claim to')} ${differentAddress}` : t('Claim to connected wallet')}
+                        </LoadingButton>
+                        <ButtonBase onClick={() => setShowInput(!showInput)} disableRipple>
+                          <Typography fontSize={12} color="grey.500" sx={{ cursor: 'pointer' }}>
+                            {t('or')}{' '}
+                            <span style={{ textDecoration: 'underline' }}>
+                              {showInput
+                                ? t('Claim to connected wallet').toLowerCase()
+                                : t('claim to a different address')}
+                            </span>
+                          </Typography>
+                        </ButtonBase>
+                      </>
+                    )}
+                  </Box>
+                ) : (
+                  <LoadingButton fullWidth variant="contained" onClick={supply} loading={loading}>
+                    {t('Supply to Velodrome pool')}
+                  </LoadingButton>
+                )}
               </Box>
             </DialogContent>
           )}
