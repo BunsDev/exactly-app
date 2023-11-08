@@ -1,68 +1,15 @@
 import { useMemo } from 'react';
 
 import useAccountData from './useAccountData';
-import interestRateCurve, { inverseInterestRateCurve } from 'utils/interestRateCurve';
-import numbers from 'config/numbers.json';
+import { floatingRate } from 'utils/interestRateCurve';
 
 const MAX = 1;
-const INTERVAL = numbers.chartInterval;
+const INTERVAL = 0.0005;
 
-export default function useUtilizationRate(
-  type: 'floating' | 'fixed',
-  symbol: string,
-  from = 0,
-  to = MAX,
-  interval = INTERVAL,
-  mandatoryPoints: number[] = [],
-  inversePoints: bigint[] = [],
-) {
+export function useCurrentUtilizationRate(type: 'floating' | 'fixed', symbol: string) {
   const { marketAccount } = useAccountData(symbol);
 
-  const data = useMemo(() => {
-    if (!marketAccount) {
-      return [];
-    }
-
-    const { interestRateModel } = marketAccount;
-
-    const { A, B, UMax } =
-      type === 'floating'
-        ? {
-            A: interestRateModel.floatingCurveA,
-            B: interestRateModel.floatingCurveB,
-            UMax: interestRateModel.floatingMaxUtilization,
-          }
-        : {
-            A: interestRateModel.fixedCurveA,
-            B: interestRateModel.fixedCurveB,
-            UMax: interestRateModel.fixedMaxUtilization,
-          };
-
-    const curve = interestRateCurve(Number(A) / 1e18, Number(B) / 1e18, Number(UMax) / 1e18);
-    const points = Array.from({ length: Math.ceil(Math.abs(to - from) / interval) + 1 }).map((_, i) => {
-      const utilization = from + i * interval;
-      return { utilization, apr: curve(utilization) };
-    });
-
-    if (mandatoryPoints.length) {
-      points.push(...mandatoryPoints.map((utilization) => ({ utilization, apr: curve(utilization) })));
-    }
-
-    if (inversePoints.length) {
-      const inverseCurve = inverseInterestRateCurve(A, B, UMax);
-      points.push(
-        ...inversePoints.map((apr) => ({ utilization: Number(inverseCurve(apr)) / 1e18, apr: Number(apr) / 1e18 })),
-      );
-    }
-
-    if (mandatoryPoints.length || inversePoints.length) {
-      points.sort((a, b) => a.utilization - b.utilization);
-    }
-
-    return points;
-  }, [marketAccount, type, from, to, interval, mandatoryPoints, inversePoints]);
-
-  const currentUtilization = useMemo(() => {
+  return useMemo(() => {
     if (!marketAccount) return undefined;
 
     const { floatingUtilization, fixedPools } = marketAccount;
@@ -83,6 +30,46 @@ export default function useUtilizationRate(
     }
     return allUtilizations;
   }, [marketAccount, type]);
+}
 
-  return { currentUtilization, data, loading: !currentUtilization || !marketAccount };
+export default function useUtilizationRate(symbol: string, from = 0, to = MAX) {
+  const { marketAccount } = useAccountData(symbol);
+
+  const data = useMemo(() => {
+    if (!marketAccount) {
+      return [];
+    }
+
+    const { interestRateModel } = marketAccount;
+
+    const { A, B, UMax } = {
+      A: interestRateModel.floatingCurveA,
+      B: interestRateModel.floatingCurveB,
+      UMax: interestRateModel.floatingMaxUtilization,
+    };
+
+    // TODO(jg): replace 0.7 with natural utilization
+    const model = floatingRate(Number(A) / 1e18, Number(B) / 1e18, Number(UMax) / 1e18, 2);
+
+    const buckets = [0, 0.25, 0.5, 0.75, 1];
+
+    const points: Record<string, number>[] = [];
+    for (let u = from; u < to; u = u + INTERVAL) {
+      const curves: Record<string, number> = {};
+      for (let i = 0; i < buckets.length; i++) {
+        const uliq = buckets[i];
+        const r = model.rate(u, uliq);
+        if (Number.isFinite(r)) {
+          curves[`curve${i}`] = r;
+        }
+      }
+      points.push({ utilization: u, ...curves });
+    }
+
+    console.log(points);
+
+    return points;
+  }, [marketAccount, from, to]);
+
+  return { data, loading: !marketAccount };
 }

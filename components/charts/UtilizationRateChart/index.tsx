@@ -1,15 +1,15 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { Typography, useTheme, Box } from '@mui/material';
 import { LineChart, XAxis, Tooltip, Line, ResponsiveContainer, CartesianGrid, YAxis } from 'recharts';
+import { useTranslation } from 'react-i18next';
 
 import { toPercentage } from 'utils/utils';
-import useUtilizationRate from 'hooks/useUtilizationRate';
+import useUtilizationRate, { useCurrentUtilizationRate } from 'hooks/useUtilizationRate';
 import TooltipChart, { TooltipChartProps } from '../TooltipChart';
 import LoadingChart from '../LoadingChart';
 import numbers from 'config/numbers.json';
 import parseTimestamp from 'utils/parseTimestamp';
 import ButtonsChart from '../ButtonsChart';
-import { useTranslation } from 'react-i18next';
 
 type Props = {
   type: 'floating' | 'fixed';
@@ -21,61 +21,58 @@ const formatEmpty = () => '';
 function UtilizationRateChart({ type, symbol }: Props) {
   const { t } = useTranslation();
   const { palette } = useTheme();
-  const [zoom, setZoom] = useState<boolean>(true);
-  const { currentUtilization } = useUtilizationRate(type, symbol);
-  const [hoverUtilizations, setHoverUtilizations] = useState<number[]>([]);
+  const [zoom, setZoom] = useState<boolean>(false);
+  // const currentUtilization = useCurrentUtilizationRate(type, symbol);
 
-  const [currentMin, currentMax, interval] = useMemo(() => {
-    if (!zoom || !currentUtilization) return [undefined, undefined, numbers.chartInterval];
-    if (!currentUtilization.length) return [numbers.chartInterval, undefined, undefined];
-    if (currentUtilization.length === 1)
-      return [
-        Math.max(0, currentUtilization[0].utilization - 10 * numbers.chartInterval),
-        currentUtilization[0].utilization + 9 * numbers.chartInterval,
-        numbers.chartInterval,
-      ];
+  //   const [currentMin, currentMax, interval] = useMemo(() => {
+  //     if (!zoom || !currentUtilization) return [undefined, undefined, numbers.chartInterval];
+  //     if (!currentUtilization.length) return [numbers.chartInterval, undefined, undefined];
+  //     if (currentUtilization.length === 1) {
+  //       return [
+  //         Math.max(0, currentUtilization[0].utilization - 10 * numbers.chartInterval),
+  //         currentUtilization[0].utilization + 9 * numbers.chartInterval,
+  //         numbers.chartInterval,
+  //       ];
+  //     }
 
-    const min = Math.min(...currentUtilization.map((item) => item.utilization));
-    const max = Math.max(...currentUtilization.map((item) => item.utilization));
-    const gap = Math.abs(max - min) / numbers.dataPointsInChart || numbers.chartInterval;
+  //     const min = Math.min(...currentUtilization.map((item) => item.utilization));
+  //     const max = Math.max(...currentUtilization.map((item) => item.utilization));
+  //     const gap = Math.abs(max - min) / numbers.dataPointsInChart || numbers.chartInterval;
 
-    return [
-      Math.max(0, min - gap * Math.floor(numbers.dataPointsInChart * 0.05)),
-      max + gap * Math.floor(numbers.dataPointsInChart * 0.05),
-      gap,
-    ];
-  }, [currentUtilization, zoom]);
+  //     return [
+  //       Math.max(0, min - gap * Math.floor(numbers.dataPointsInChart * 0.05)),
+  //       max + gap * Math.floor(numbers.dataPointsInChart * 0.05),
+  //       gap,
+  //     ];
+  //   }, [currentUtilization, zoom]);
 
   const { data, loading } = useUtilizationRate(
-    type,
     symbol,
-    currentMin,
-    currentMax,
-    interval,
-    currentUtilization ? currentUtilization?.map((item) => item.utilization) : [],
+    // currentMin,
+    // currentMax,
+    // interval,
+    // currentUtilization ? currentUtilization.map((item) => item.utilization) : [],
   );
 
   const [cursorStyle, setCursorStyle] = useState('default');
 
-  const handleMouseEnter = (utilization: number) => {
-    setHoverUtilizations((currentHoverPools) => [...currentHoverPools.filter((u) => u !== utilization), utilization]);
+  const handleMouseEnter = () => {
     setCursorStyle('pointer');
   };
 
-  const handleMouseLeave = (utilization: number) => {
-    setHoverUtilizations((currentHoverPools) => currentHoverPools.filter((u) => u !== utilization));
+  const handleMouseLeave = () => {
     setCursorStyle('default');
   };
 
-  const maturitiesOnTooltip = useMemo(
-    () =>
-      currentUtilization
-        ? currentUtilization
-            .filter(({ utilization }) => hoverUtilizations.includes(utilization))
-            .map(({ maturity }) => maturity)
-        : [],
-    [currentUtilization, hoverUtilizations],
-  );
+  // const maturitiesOnTooltip = useMemo(
+  //   () =>
+  //     currentUtilization
+  //       ? currentUtilization
+  //           .filter(({ utilization }) => hoverUtilizations.includes(utilization))
+  //           .map(({ maturity }) => maturity)
+  //       : [],
+  //   [currentUtilization, hoverUtilizations],
+  // );
 
   const buttons = useMemo(
     () => [
@@ -91,6 +88,11 @@ function UtilizationRateChart({ type, symbol }: Props) {
     [t],
   );
 
+  const curves = data.reduce((max, p) => {
+    const keys = Object.keys(p).filter((k) => k.startsWith('curve'));
+    return keys.length > max ? keys.length : max;
+  }, 0);
+
   return (
     <Box display="flex" flexDirection="column" width="100%" height="100%" gap={2}>
       <Box display="flex" justifyContent="space-between">
@@ -102,7 +104,7 @@ function UtilizationRateChart({ type, symbol }: Props) {
         </Box>
       </Box>
       <ResponsiveContainer width="100%" height="100%">
-        {loading || !currentUtilization ? (
+        {loading ? (
           <LoadingChart />
         ) : (
           <LineChart data={data} margin={{ top: 5, bottom: 5 }} style={{ cursor: cursorStyle }}>
@@ -164,14 +166,7 @@ function UtilizationRateChart({ type, symbol }: Props) {
             <Tooltip
               labelFormatter={formatEmpty}
               formatter={(value) => toPercentage(value as number)}
-              content={
-                <CustomTooltipChart
-                  highlighted={currentUtilization}
-                  maturitiesOnTooltip={maturitiesOnTooltip}
-                  type={type}
-                  zoom={zoom}
-                />
-              }
+              content={<CustomTooltipChart highlighted={[]} maturitiesOnTooltip={[]} type={type} zoom={zoom} />}
               cursor={{ strokeWidth: 1, fill: palette.grey[500], strokeDasharray: '3' }}
             />
 
@@ -187,25 +182,30 @@ function UtilizationRateChart({ type, symbol }: Props) {
               animationDuration={2000}
             />
 
-            <Line
-              dot={(props) => (
-                <CustomDot
-                  {...props}
-                  color={palette.operation.variable}
-                  dotsToHighlight={currentUtilization.map((item) => item.utilization)}
-                  onMouseEnter={handleMouseEnter}
-                  onMouseLeave={handleMouseLeave}
+            {Array.from({ length: curves }).map((_, i) => {
+              const curve = `curve${i}`;
+              return (
+                <Line
+                  key={curve}
+                  dot={(props) => (
+                    <CustomDot
+                      {...props}
+                      color={palette.operation.variable}
+                      onMouseEnter={handleMouseEnter}
+                      onMouseLeave={handleMouseLeave}
+                    />
+                  )}
+                  name={curve}
+                  yAxisId="yaxis"
+                  type="monotone"
+                  dataKey={curve}
+                  stroke={palette.mode === 'light' ? 'black' : 'white'}
+                  strokeWidth={2}
+                  isAnimationActive={false}
+                  activeDot={false}
                 />
-              )}
-              name={t('Borrow APR')}
-              yAxisId="yaxis"
-              type="monotone"
-              dataKey="apr"
-              stroke={palette.mode === 'light' ? 'black' : 'white'}
-              strokeWidth={2}
-              isAnimationActive={false}
-              activeDot={false}
-            />
+              );
+            })}
           </LineChart>
         )}
       </ResponsiveContainer>
