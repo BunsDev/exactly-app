@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { basename } from 'path';
 import { readdir, readFile } from 'fs/promises';
 import type { GetStaticPaths, GetStaticProps, NextPage } from 'next';
@@ -11,6 +11,7 @@ import { Box, IconButton, Tooltip, Typography, Grid } from '@mui/material';
 import Link from 'next/link';
 import useRouter from 'hooks/useRouter';
 import { useTranslation } from 'react-i18next';
+import { floatingRate, type FloatingParameters, FixedParameters, fixedRate } from 'utils/InterestRateModel';
 
 type Props = {
   symbol: string;
@@ -19,6 +20,76 @@ type Props = {
 const Market: NextPage<Props> = ({ symbol }: Props) => {
   const { t } = useTranslation();
   const { query } = useRouter();
+
+  useEffect(() => {
+    const parameters: FloatingParameters = {
+      a: 13829000000000000n,
+      b: 17429000000000000n,
+      maxUtilization: 1100000000000000000n,
+      floatingNaturalUtilization: 700000000000000000n,
+      sigmoidSpeed: 2500000000000000000n,
+      growthSpeed: 1000000000000000000n,
+      maxRate: 150000000000000000000n,
+    };
+    let uFloating = 0n,
+      uGlobal = 0n;
+    let rate = floatingRate(parameters, uFloating, uGlobal);
+
+    console.log('***********************************');
+    console.log({ uFloating, uGlobal, rate });
+    uFloating = uGlobal = 500000000000000000n;
+    rate = floatingRate(parameters, uFloating, uGlobal);
+    console.log({ uFloating, uGlobal, rate });
+    uFloating = uGlobal = 700000000000000000n;
+    rate = floatingRate(parameters, uFloating, uGlobal);
+    console.log({ uFloating, uGlobal, rate });
+    console.log('***********************************');
+
+    // maxPools: bigint;
+    // maturity: bigint;
+    // timestamp?: bigint;
+    // spreadFactor: bigint;
+    // timePreference: bigint;
+    // maturitySpeed: bigint;
+    const fixedParameters: FixedParameters = {
+      ...parameters,
+      timestamp: 0n,
+      maxPools: 6n,
+      maturity: 86400n,
+      spreadFactor: 200000000000000000n,
+      timePreference: 0n,
+      maturitySpeed: 500000000000000000n,
+    };
+
+    let uFixed = (uFloating = uGlobal = 0n);
+    rate = fixedRate(fixedParameters, uFixed, uFloating, uGlobal);
+    console.log({ uFixed, uFloating, uGlobal, rate });
+    console.log('***********************************');
+
+    fixedParameters.timestamp = fixedParameters.timestamp || 0n + 86_400_000n * 11n;
+    console.log('11 days later');
+    rate = fixedRate(fixedParameters, uFixed, uFloating, uGlobal);
+    console.log({ uFixed, uFloating, uGlobal, rate });
+    console.log('***********************************');
+
+    fixedParameters.timestamp = fixedParameters.timestamp || 0n + 86_400_000n * 5n;
+    console.log('5 days later');
+    uFixed = 500000000000000000n;
+    uFloating = 300000000000000000n;
+    uGlobal = 900000000000000000n;
+    rate = fixedRate(fixedParameters, uFixed, uFloating, uGlobal);
+    console.log({ uFixed, uFloating, uGlobal, rate });
+    console.log('***********************************');
+
+    fixedParameters.timestamp = fixedParameters.timestamp || 0n + 86_400_000n * 5n;
+    console.log('5 days later');
+    uFixed = 700000000000000000n;
+    uFloating = 200000000000000000n;
+    uGlobal = 900000000000000000n;
+    rate = fixedRate(fixedParameters, uFixed, uFloating, uGlobal);
+    console.log({ uFixed, uFloating, uGlobal, rate });
+    console.log('***********************************');
+  }, []);
 
   return (
     <Grid container mt={-1}>
